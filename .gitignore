@@ -7,12 +7,17 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.venv_broken/
 venv/
 env/
 
 # Backend runtime files
 backend/__pycache__/
 backend/.env
+ml/cache/
+ml/audit/
+ml/processed/
+ml/runs/
 
 # Frontend / Node
 node_modules/

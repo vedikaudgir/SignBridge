@@ -1,0 +1,18 @@
+[33mcommit b450013e2ea045510a3891660203d2e496923cb8[m
+Author: MahithaJV <mahithajv495@gmail.com>
+Date:   Fri Sep 4 18:24:47 2026 +0530
+
+    Add my changes
+
+ backend/main.py                                |  12 [32m+[m[31m-[m
+ backend/model.py                               | 128 [32m++++[m[31m-[m
+ frontend/package-lock.json                     |   4 [31m-[m
+ frontend/src/App.jsx                           |  35 [32m+[m[31m-[m
+ frontend/src/components/AccessibilityPanel.jsx | 221 [32m+++++++++[m
+ frontend/src/components/InputSection.jsx       |  28 [32m+[m[31m-[m
+ frontend/src/components/Navbar.jsx             |  36 [32m+[m[31m-[m
+ frontend/src/components/TranslationSection.jsx | 141 [32m+++++[m[31m-[m
+ frontend/src/context/AccessibilityContext.jsx  | 135 [32m++++++[m
+ frontend/src/index.css                         | 624 [32m++++++++++++++++++++++++[m[31m-[m
+ frontend/src/main.jsx                          |   5 [32m+[m[31m-[m
+ 11 files changed, 1330 insertions(+), 39 deletions(-)
