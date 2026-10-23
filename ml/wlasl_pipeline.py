@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import sys
+from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -15,7 +16,6 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from landmarks import extract_landmark_vector  # noqa: E402
-from backend.preprocessing import PreprocessingConfig, prepare_landmark_sequence  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -34,22 +34,62 @@ def load_wlasl_metadata(metadata_path: Path) -> list[dict]:
         return json.load(handle)
 
 
-def select_classes(entries: list[dict], class_count: int, classes: list[str] | None) -> list[str]:
-    if classes:
-        requested = [label.strip() for label in classes if label.strip()]
-        available = {entry["gloss"] for entry in entries}
+def index_videos(videos_dir: Path) -> dict[str, Path]:
+    if not videos_dir.exists():
+        return {}
+    supported_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+    return {
+        path.stem: path
+        for path in sorted(videos_dir.rglob("*"))
+        if path.is_file() and path.suffix.lower() in supported_extensions
+    }
+
+
+def select_classes(
+    entries: list[dict],
+    classes: list[str] | None = None,
+    video_index: dict[str, Path] | None = None,
+    usable_video_ids: set[str] | None = None,
+) -> list[str]:
+    requested = (
+        list(dict.fromkeys(label.strip() for label in classes if label.strip()))
+        if classes
+        else None
+    )
+    available = {entry["gloss"] for entry in entries}
+    if requested is not None:
         missing = sorted(set(requested) - available)
         if missing:
             raise ValueError(f"Requested classes not found in WLASL metadata: {missing}")
-        return requested
 
-    scored: list[tuple[int, str]] = []
+    eligible: set[str] = set()
     for entry in entries:
-        splits = {inst.get("split") for inst in entry.get("instances", [])}
-        if {"train", "val", "test"}.issubset(splits):
-            scored.append((len(entry.get("instances", [])), entry["gloss"]))
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    return [label for _, label in scored[:class_count]]
+        instances = entry.get("instances", [])
+        split_counts = Counter()
+        for instance in instances:
+            video_id = str(instance.get("video_id"))
+            if instance.get("split") not in {"train", "val", "test"}:
+                continue
+            if video_index is not None and video_id not in video_index:
+                continue
+            if usable_video_ids is not None and video_id not in usable_video_ids:
+                continue
+            split_counts[instance["split"]] += 1
+        if all(split_counts[split] for split in ("train", "val", "test")):
+            eligible.add(entry["gloss"])
+
+    selected = requested if requested is not None else sorted(eligible)
+    unavailable = sorted(set(selected) - eligible)
+    if unavailable:
+        raise ValueError(
+            "Requested classes lack readable train, validation, and test videos: "
+            f"{unavailable}"
+        )
+    if not selected:
+        raise ValueError(
+            "No gloss has readable videos in all official train, validation, and test splits."
+        )
+    return selected
 
 
 def find_video(video_id: str, videos_dir: Path) -> Path | None:
@@ -65,6 +105,8 @@ def build_manifest(
     entries: list[dict],
     class_names: list[str],
     videos_dir: Path,
+    video_index: dict[str, Path] | None = None,
+    usable_video_ids: set[str] | None = None,
 ) -> list[Sample]:
     selected = set(class_names)
     manifest: list[Sample] = []
@@ -73,14 +115,23 @@ def build_manifest(
         if gloss not in selected:
             continue
         for inst in entry.get("instances", []):
-            video_path = find_video(str(inst["video_id"]), videos_dir)
+            if inst.get("split") not in {"train", "val", "test"}:
+                continue
+            video_id = str(inst["video_id"])
+            if usable_video_ids is not None and video_id not in usable_video_ids:
+                continue
+            video_path = (
+                video_index.get(video_id)
+                if video_index is not None
+                else find_video(video_id, videos_dir)
+            )
             if video_path is None:
                 continue
             manifest.append(
                 Sample(
                     gloss=gloss,
                     split=inst["split"],
-                    video_id=str(inst["video_id"]),
+                    video_id=video_id,
                     signer_id=inst.get("signer_id"),
                     frame_start=int(inst.get("frame_start") or 1),
                     frame_end=int(inst.get("frame_end") or -1),
@@ -149,7 +200,14 @@ def write_manifest(path: Path, rows: list[Sample]) -> None:
 
 
 def save_split(output_dir: Path, split: str, x: np.ndarray, y: np.ndarray) -> None:
-    np.savez_compressed(output_dir / f"{split}.npz", x=x.astype(np.float32), y=y.astype(np.int64))
+    output_path = output_dir / f"{split}.npz"
+    temporary_path = output_path.with_name(f"{output_path.stem}.tmp.npz")
+    np.savez_compressed(
+        temporary_path,
+        x=x.astype(np.float32),
+        y=y.astype(np.int64),
+    )
+    temporary_path.replace(output_path)
 
 
 def load_processed_split(processed_dir: Path, split: str) -> tuple[np.ndarray, np.ndarray]:

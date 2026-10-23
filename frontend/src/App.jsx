@@ -93,6 +93,8 @@ export default function App() {
             confidence: payload.confidence ?? 0,
             timestamp: new Date().toISOString(),
           });
+        } else {
+          setPrediction(null);
         }
       },
       onError: (error) => {
