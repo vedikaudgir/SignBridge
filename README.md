@@ -442,4 +442,4 @@ We acknowledge the developers and researchers behind React, Vite, FastAPI, OpenC
 
 ---
 
-**SignBridge — Exploring accessible communication through computer vision and machine learning.**
+**SignBridge — Exploring accessible communication through computer vision and machine learning. Yet to be deployed.**
