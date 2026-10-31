@@ -11,8 +11,11 @@ import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+logger = logging.getLogger("signbridge.backend")
+logging.basicConfig(level=logging.INFO)
+
 from landmarks import create_holistic, decode_base64_frame, extract_landmark_vector
-from model import predict
+from model import predict_top_k
 
 
 def load_env_file(env_path: Path) -> None:
@@ -31,7 +34,7 @@ BASE_DIR = Path(__file__).resolve().parent
 load_env_file(BASE_DIR / ".env")
 
 WINDOW_SIZE = int(os.getenv("SIGNBRIDGE_WINDOW_SIZE", "30"))
-CONFIDENCE_THRESHOLD = float(os.getenv("SIGNBRIDGE_CONFIDENCE_THRESHOLD", "0.7"))
+CONFIDENCE_THRESHOLD = float(os.getenv("SIGNBRIDGE_CONFIDENCE_THRESHOLD", "0.01"))
 CONSECUTIVE_PREDICTION_COUNT = int(
     os.getenv("SIGNBRIDGE_CONSECUTIVE_PREDICTIONS", "3")
 )
@@ -41,9 +44,6 @@ INCLUDE_FACE_LANDMARKS = (
 HOST = os.getenv("SIGNBRIDGE_HOST", "0.0.0.0")
 PORT = int(os.getenv("SIGNBRIDGE_PORT", "8000"))
 RELOAD = os.getenv("SIGNBRIDGE_RELOAD", "true").lower() == "true"
-
-logger = logging.getLogger("signbridge.backend")
-logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="SignBridge Backend")
 app.add_middleware(
@@ -58,9 +58,6 @@ app.add_middleware(
 @dataclass
 class TemporalSmoothingState:
     recent_predictions: Deque[str] = field(
-        default_factory=lambda: deque(maxlen=CONSECUTIVE_PREDICTION_COUNT)
-    )
-    recent_confidences: Deque[float] = field(
         default_factory=lambda: deque(maxlen=CONSECUTIVE_PREDICTION_COUNT)
     )
     last_emitted_prediction: str | None = None
@@ -95,23 +92,18 @@ def smooth_prediction(
 ) -> tuple[str | None, float]:
     if confidence < CONFIDENCE_THRESHOLD:
         smoothing_state.recent_predictions.clear()
-        smoothing_state.recent_confidences.clear()
-        return None, 0.0
+        return None, confidence
 
     smoothing_state.recent_predictions.append(prediction)
-    smoothing_state.recent_confidences.append(confidence)
 
     if len(smoothing_state.recent_predictions) < CONSECUTIVE_PREDICTION_COUNT:
-        return None, 0.0
+        return None, confidence
 
     if len(set(smoothing_state.recent_predictions)) != 1:
-        return None, 0.0
+        return None, confidence
 
-    averaged_confidence = sum(smoothing_state.recent_confidences) / len(
-        smoothing_state.recent_confidences
-    )
     smoothing_state.last_emitted_prediction = prediction
-    return prediction, float(averaged_confidence)
+    return prediction, confidence
 
 
 @app.get("/health")
@@ -129,6 +121,7 @@ async def sign_stream(websocket: WebSocket) -> None:
     try:
         while True:
             raw_message = await websocket.receive_text()
+            frames_received = len(session.landmark_window)
 
             try:
                 payload = json.loads(raw_message)
@@ -141,6 +134,7 @@ async def sign_stream(websocket: WebSocket) -> None:
                     include_face_landmarks=INCLUDE_FACE_LANDMARKS,
                 )
                 session.landmark_window.append(landmark_vector)
+                frames_received += 1
 
                 prediction_payload = {"prediction": None, "confidence": 0.0}
 
@@ -148,18 +142,64 @@ async def sign_stream(websocket: WebSocket) -> None:
                     landmark_sequence = np.array(
                         session.landmark_window, dtype=np.float32
                     )
-                    predicted_label, confidence = predict(landmark_sequence)
+                    top_predictions = predict_top_k(landmark_sequence, top_k=5)
+                    logger.info(
+                        "WebSocket %s raw top-5 model predictions: %s",
+                        session.session_id,
+                        [(label, round(confidence, 4)) for label, confidence in top_predictions],
+                    )
+                    predicted_label, confidence = top_predictions[0]
+                    if confidence < CONFIDENCE_THRESHOLD:
+                        logger.info(
+                            "WebSocket %s prediction rejected: low confidence "
+                            "(%s=%.4f, threshold=%.4f)",
+                            session.session_id,
+                            predicted_label,
+                            confidence,
+                            CONFIDENCE_THRESHOLD,
+                        )
                     smoothed_prediction, smoothed_confidence = smooth_prediction(
                         predicted_label,
                         confidence,
                         session.smoothing,
                     )
+                    if confidence >= CONFIDENCE_THRESHOLD and not smoothed_prediction:
+                        recent = list(session.smoothing.recent_predictions)
+                        if len(recent) < CONSECUTIVE_PREDICTION_COUNT:
+                            logger.info(
+                                "WebSocket %s prediction rejected: unstable prediction "
+                                "(stability pending %d/%d, labels=%s)",
+                                session.session_id,
+                                len(recent),
+                                CONSECUTIVE_PREDICTION_COUNT,
+                                recent,
+                            )
+                        else:
+                            logger.info(
+                                "WebSocket %s prediction rejected: unstable prediction "
+                                "(recent labels=%s)",
+                                session.session_id,
+                                recent,
+                            )
+                    elif smoothed_prediction:
+                        logger.info(
+                            "WebSocket %s prediction accepted: %s confidence=%.4f",
+                            session.session_id,
+                            smoothed_prediction,
+                            smoothed_confidence,
+                        )
                     prediction_payload = {
                         "prediction": smoothed_prediction,
-                        "confidence": (
-                            smoothed_confidence if smoothed_prediction else 0.0
-                        ),
+                        "confidence": smoothed_confidence,
                     }
+                else:
+                    logger.info(
+                        "WebSocket %s prediction rejected: insufficient frames "
+                        "(%d/%d)",
+                        session.session_id,
+                        frames_received,
+                        min(WINDOW_SIZE, 10),
+                    )
 
                 await websocket.send_json(prediction_payload)
             except KeyError:
@@ -173,7 +213,8 @@ async def sign_stream(websocket: WebSocket) -> None:
                     break
             except Exception as exc:
                 logger.exception(
-                    "Frame processing failed for session %s: %s",
+                    "WebSocket %s prediction rejected: inference/frame processing "
+                    "error: %s",
                     session.session_id,
                     exc,
                 )
@@ -186,7 +227,6 @@ async def sign_stream(websocket: WebSocket) -> None:
     finally:
         session.landmark_window.clear()
         session.smoothing.recent_predictions.clear()
-        session.smoothing.recent_confidences.clear()
         session.holistic.close()
         active_sessions.pop(session.session_id, None)
 

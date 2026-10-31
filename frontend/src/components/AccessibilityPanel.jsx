@@ -11,6 +11,7 @@ import {
   Minus,
   Plus,
   ChevronDown,
+  Check,
 } from 'lucide-react';
 import { useAccessibility } from '../context/AccessibilityContext';
 
@@ -44,8 +45,18 @@ export default function AccessibilityPanel() {
         setLangDropdownOpen(false);
       }
     };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+        setLangDropdownOpen(false);
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   return (
@@ -57,6 +68,8 @@ export default function AccessibilityPanel() {
         className="accessibility-fab"
         title="Accessibility Options"
         aria-label="Open accessibility panel"
+        aria-expanded={isOpen}
+        aria-controls="accessibility-options"
       >
         {isOpen ? (
           <X className="accessibility-fab-icon" />
@@ -67,7 +80,7 @@ export default function AccessibilityPanel() {
 
       {/* Expanded Panel */}
       {isOpen && (
-        <div className="accessibility-panel">
+        <div className="accessibility-panel" id="accessibility-options">
           <div className="accessibility-panel-header">
             <Accessibility className="accessibility-panel-header-icon" />
             <span>Accessibility</span>
@@ -80,20 +93,9 @@ export default function AccessibilityPanel() {
               type="button"
               onClick={toggleTheme}
               className="accessibility-theme-toggle"
+              aria-pressed={theme === 'dark'}
             >
-              <div className="accessibility-theme-toggle-track">
-                <div
-                  className={`accessibility-theme-toggle-thumb ${
-                    theme === 'dark' ? 'accessibility-theme-toggle-thumb--dark' : ''
-                  }`}
-                >
-                  {theme === 'dark' ? (
-                    <Moon className="accessibility-theme-icon" />
-                  ) : (
-                    <Sun className="accessibility-theme-icon" />
-                  )}
-                </div>
-              </div>
+              {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
               <span className="accessibility-theme-label">
                 {theme === 'dark' ? 'Dark Mode' : 'Light Mode'}
               </span>
@@ -112,7 +114,6 @@ export default function AccessibilityPanel() {
                 onClick={() => setLangDropdownOpen((prev) => !prev)}
                 className="accessibility-lang-button"
               >
-                <span className="accessibility-lang-flag">{currentLang?.flag}</span>
                 <span className="accessibility-lang-name">{currentLang?.name}</span>
                 <ChevronDown
                   className={`accessibility-lang-chevron ${
@@ -134,11 +135,11 @@ export default function AccessibilityPanel() {
                       className={`accessibility-lang-option ${
                         language === lang.code ? 'accessibility-lang-option--active' : ''
                       }`}
+                      aria-pressed={language === lang.code}
                     >
-                      <span>{lang.flag}</span>
                       <span>{lang.name}</span>
                       {language === lang.code && (
-                        <span className="accessibility-lang-check">✓</span>
+                        <Check className="accessibility-lang-check" aria-label="Selected" />
                       )}
                     </button>
                   ))}

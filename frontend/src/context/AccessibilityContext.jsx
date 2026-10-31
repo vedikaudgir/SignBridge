@@ -3,18 +3,18 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 const AccessibilityContext = createContext(null);
 
 const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: 'English', flag: '🇬🇧' },
-  { code: 'es', name: 'Spanish', flag: '🇪🇸' },
-  { code: 'fr', name: 'French', flag: '🇫🇷' },
-  { code: 'de', name: 'German', flag: '🇩🇪' },
-  { code: 'hi', name: 'Hindi', flag: '🇮🇳' },
-  { code: 'te', name: 'Telugu', flag: '🇮🇳' },
-  { code: 'ja', name: 'Japanese', flag: '🇯🇵' },
-  { code: 'ko', name: 'Korean', flag: '🇰🇷' },
-  { code: 'zh', name: 'Chinese', flag: '🇨🇳' },
-  { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
-  { code: 'pt', name: 'Portuguese', flag: '🇧🇷' },
-  { code: 'ru', name: 'Russian', flag: '🇷🇺' },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'te', name: 'Telugu' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'zh', name: 'Chinese' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'ru', name: 'Russian' },
 ];
 
 export function AccessibilityProvider({ children }) {

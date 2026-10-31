@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Navbar from './components/Navbar';
-import InputSection from './components/InputSection';
+import InputSection, { CameraControlToolbar } from './components/InputSection';
 import RecognitionSection from './components/RecognitionSection';
 import TranslationSection from './components/TranslationSection';
 import StatusBar from './components/StatusBar';
 import AccessibilityPanel from './components/AccessibilityPanel';
+import LegalPage from './components/LegalPage';
 import { SignStreamClient } from './services/signStreamClient';
 import { useAccessibility } from './context/AccessibilityContext';
 
@@ -13,16 +14,19 @@ const WS_URL =
 
 export default function App() {
   const streamClientRef = useRef(null);
+  const cameraVideoRef = useRef(null);
   const [currentInput, setCurrentInput] = useState(null);
   const [prediction, setPrediction] = useState(null);
+  const [latestConfidence, setLatestConfidence] = useState(0);
   const [sentenceWords, setSentenceWords] = useState([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [streamStatus, setStreamStatus] = useState('idle');
   const [connectionMessage, setConnectionMessage] = useState('Camera not started');
   const [frameCount, setFrameCount] = useState(0);
+  const [pathname, setPathname] = useState(window.location.pathname);
 
-  const { theme, speakText, language, translateText } = useAccessibility();
+  const { speakText, language, translateText } = useAccessibility();
 
   const showToast = (message) => {
     setToastMessage(message);
@@ -31,13 +35,20 @@ export default function App() {
   };
 
   useEffect(() => {
+    const handlePopState = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
     return () => {
+      window.removeEventListener('popstate', handlePopState);
       if (streamClientRef.current) {
         streamClientRef.current.stop();
         streamClientRef.current = null;
       }
     };
   }, []);
+
+  if (pathname === '/privacy-policy' || pathname === '/terms') {
+    return <LegalPage page={pathname === '/privacy-policy' ? 'privacy' : 'terms'} />;
+  }
 
   const stopStreaming = async ({ silent = false } = {}) => {
     if (streamClientRef.current) {
@@ -66,6 +77,7 @@ export default function App() {
     }
 
     setPrediction(null);
+    setLatestConfidence(0);
     setCurrentInput({
       id: `camera_${Date.now()}`,
       name: 'Live webcam stream',
@@ -86,6 +98,7 @@ export default function App() {
       },
       onPrediction: (payload) => {
         setFrameCount((count) => count + 1);
+        setLatestConfidence(payload.confidence ?? 0);
 
         if (payload.prediction) {
           setPrediction({
@@ -100,6 +113,7 @@ export default function App() {
       onError: (error) => {
         console.error('Streaming error:', error);
         setPrediction(null);
+        setLatestConfidence(0);
         showToast(error.message || 'Streaming failed');
       },
     });
@@ -115,6 +129,7 @@ export default function App() {
       setStreamStatus('error');
       setCurrentInput(null);
       streamClientRef.current = null;
+      setLatestConfidence(0);
 
       let friendlyMsg = error.message || 'Unable to start stream';
       if (error.name === 'NotAllowedError' || error.message?.toLowerCase().includes('permission denied')) {
@@ -129,6 +144,7 @@ export default function App() {
     await stopStreaming({ silent: true });
     setCurrentInput(null);
     setPrediction(null);
+    setLatestConfidence(0);
     setConnectionMessage('Camera not started');
   };
 
@@ -174,6 +190,7 @@ export default function App() {
     await stopStreaming({ silent: true });
     setCurrentInput(null);
     setPrediction(null);
+    setLatestConfidence(0);
     setSentenceWords([]);
     setConnectionMessage('Camera not started');
     showToast('Reset application workspace');
@@ -183,30 +200,43 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-[#F9F9FA] text-zinc-900 selection:bg-zinc-200">
       <Navbar onReset={handleResetAll} />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col gap-6">
+      <main className="app-main">
+        <section className="app-intro" aria-labelledby="page-title">
+          <p className="eyebrow">SIGNBRIDGE · LIVE CAMERA MODE</p>
+          <h1 id="page-title">Read a live sign prediction</h1>
+          <p>
+            Send live camera frames to SignBridge and review predictions before
+            adding them to your text.
+          </p>
+        </section>
+        <CameraControlToolbar
+          videoRef={cameraVideoRef}
+          onStartStreaming={startStreaming}
+          onStopStreaming={() => stopStreaming()}
+          streamStatus={streamStatus}
+          connectionMessage={connectionMessage}
+          websocketUrl={WS_URL}
+        />
         {toastMessage && (
-          <div className="fixed bottom-20 right-24 z-[9998] px-4 py-2.5 bg-zinc-900 text-zinc-100 text-xs font-medium rounded-lg shadow-lg border border-zinc-700 transition-all animate-[panel-enter_0.3s_ease]">
+          <div role="status" className="toast-message">
             {toastMessage}
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+        <div className="recognition-layout" id="live-recognition">
           <InputSection
+            videoRef={cameraVideoRef}
             currentInput={currentInput}
             onClearInput={handleClearInput}
-            onStartStreaming={startStreaming}
-            onStopStreaming={() => stopStreaming()}
-            isAnalyzing={isAnalyzing}
             streamStatus={streamStatus}
             connectionMessage={connectionMessage}
-            websocketUrl={WS_URL}
           />
 
           <RecognitionSection
             prediction={prediction}
+            latestConfidence={latestConfidence}
             onAddToSentence={handleAddToSentence}
             isAnalyzing={isAnalyzing}
-            streamStatus={streamStatus}
             frameCount={frameCount}
             connectionMessage={connectionMessage}
           />
@@ -222,9 +252,6 @@ export default function App() {
 
       <StatusBar
         modelStatus={streamStatus}
-        totalClasses="Predict stub active"
-        transportLabel="WebSocket"
-        endpointLabel={WS_URL}
       />
 
       <AccessibilityPanel />
