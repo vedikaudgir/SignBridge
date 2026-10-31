@@ -54,7 +54,12 @@ class SignBridgeModel:
         ).to(self.device)
         self.model.load_state_dict(torch.load(weights_path, map_location=self.device))
         self.model.eval()
-        logger.info("Loaded SignBridge model from %s", model_dir)
+        logger.info(
+            "Loaded SignBridge model from %s with %d classes on %s",
+            model_dir,
+            len(self.class_names),
+            self.device,
+        )
 
     def _classify_hand(self, hand: np.ndarray) -> tuple[str, float]:
         wrist = hand[0]
@@ -183,17 +188,28 @@ class SignBridgeModel:
         return most_common_label, avg_confidence
 
     def predict(self, landmark_sequence: np.ndarray) -> tuple[str, float]:
+        predictions = self.predict_top_k(landmark_sequence, top_k=1)
+        return predictions[0] if predictions else ("unknown", 0.0)
+
+    def predict_top_k(
+        self, landmark_sequence: np.ndarray, top_k: int = 5
+    ) -> list[tuple[str, float]]:
+        if top_k <= 0:
+            raise ValueError("top_k must be positive")
         if self.model is None or torch is None:
-            return self._heuristic_predict(landmark_sequence)
+            return [self._heuristic_predict(landmark_sequence)]
         if landmark_sequence.ndim != 2 or landmark_sequence.size == 0:
-            return "unknown", 0.0
+            return [("unknown", 0.0)]
 
         prepared = prepare_landmark_sequence(landmark_sequence, self.preprocessing)
         with torch.no_grad():
             inputs = torch.from_numpy(prepared).unsqueeze(0).to(self.device)
             probabilities = torch.softmax(self.model(inputs), dim=1).cpu().numpy()[0]
-        class_idx = int(np.argmax(probabilities))
-        return self.class_names[class_idx], float(probabilities[class_idx])
+        top_indices = np.argsort(probabilities)[-min(top_k, len(probabilities)):][::-1]
+        return [
+            (self.class_names[int(index)], float(probabilities[index]))
+            for index in top_indices
+        ]
 
 
 _MODEL = SignBridgeModel()
@@ -201,3 +217,9 @@ _MODEL = SignBridgeModel()
 
 def predict(landmark_sequence: np.ndarray) -> tuple[str, float]:
     return _MODEL.predict(landmark_sequence)
+
+
+def predict_top_k(
+    landmark_sequence: np.ndarray, top_k: int = 5
+) -> list[tuple[str, float]]:
+    return _MODEL.predict_top_k(landmark_sequence, top_k)

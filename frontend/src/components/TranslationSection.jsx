@@ -74,14 +74,14 @@ export default function TranslationSection({
   return (
     <div className="flex flex-col gap-3 rounded-md border border-zinc-300 bg-[#FCFCFD] p-5">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold uppercase tracking-wider text-zinc-600">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-600">
           Translated Text
-        </label>
+        </h2>
         <div className="flex items-center gap-2">
           {language !== 'en' && (
-            <span className="translation-badge">
+              <span className="translation-badge">
               <Languages className="w-3 h-3" />
-              {currentLang?.flag} {currentLang?.name}
+              {currentLang?.name}
             </span>
           )}
           <span className="text-xs text-zinc-500 font-mono">
@@ -114,7 +114,7 @@ export default function TranslationSection({
       {language !== 'en' && sentenceWords.length > 0 && (
         <div className="min-h-[48px] p-4 border border-zinc-200 rounded relative overflow-hidden"
           style={{
-            background: 'linear-gradient(135deg, rgba(99,102,241,0.04) 0%, rgba(139,92,246,0.04) 100%)',
+            background: 'var(--surface-muted)',
           }}
         >
           <div className="flex items-start justify-between gap-3">
@@ -127,7 +127,7 @@ export default function TranslationSection({
               </div>
               {isTranslating ? (
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--border-color)', borderTopColor: 'var(--accent-solid)' }} />
+                  <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent)' }} />
                   <span className="text-xs text-zinc-500">Translating...</span>
                 </div>
               ) : (
@@ -143,12 +143,11 @@ export default function TranslationSection({
       {/* Sentence Action Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-200">
         <div className="flex items-center gap-2">
-          {/* Read Aloud Button - Premium accent gradient */}
           <button
             type="button"
             onClick={handleReadAloud}
             disabled={sentenceWords.length === 0}
-            className={`read-aloud-btn ${isSpeaking ? 'speaking-indicator' : ''}`}
+            className="read-aloud-btn"
             title={isSpeaking ? 'Stop reading aloud' : 'Read sentence aloud via Text-to-Speech'}
           >
             {isSpeaking ? (
